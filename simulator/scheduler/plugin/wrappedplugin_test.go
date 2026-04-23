@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -191,7 +191,7 @@ func Test_wrappedPlugin_Filter(t *testing.T) {
 		},
 		{
 			name:                 "success when it is not filter plugin",
-			prepareStoreFn:       func(m *mock_plugin.MockStore) {},
+			prepareStoreFn:       func(_ *mock_plugin.MockStore) {},
 			originalFilterPlugin: nil, // don't have filter plugin
 			args: args{
 				pod: &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pod1"}},
@@ -217,7 +217,7 @@ func Test_wrappedPlugin_Filter(t *testing.T) {
 					return n
 				}(),
 			},
-			want: framework.AsStatus(errors.New("filter failed")),
+			want: framework.AsStatus(errFilter),
 		},
 	}
 	for _, tt := range tests {
@@ -299,7 +299,7 @@ func Test_wrappedPlugin_Filter_WithPluginExtender(t *testing.T) {
 		},
 		{
 			name: "return BeforeFilter's results when BeforeFilter is fails",
-			prepareEachMockFn: func(ctx context.Context, s *mock_plugin.MockStore, p *mock_plugin.MockFilterPlugin, fe *mock_plugin.MockFilterPluginExtender, as args) {
+			prepareEachMockFn: func(ctx context.Context, _ *mock_plugin.MockStore, p *mock_plugin.MockFilterPlugin, fe *mock_plugin.MockFilterPluginExtender, as args) {
 				failure := framework.NewStatus(framework.Error, "BeforeFilter returned")
 				fe.EXPECT().BeforeFilter(ctx, nil, as.pod, as.nodeInfo).Return(failure)
 				p.EXPECT().Name().Return("fakeFilterPlugin").AnyTimes()
@@ -366,7 +366,7 @@ func Test_wrappedPlugin_PostFilter(t *testing.T) {
 
 	type args struct {
 		pod                   *v1.Pod
-		filteredNodeStatusMap framework.NodeToStatusMap
+		filteredNodeStatusMap framework.NodeToStatusReader
 	}
 	tests := []struct {
 		name                     string
@@ -389,10 +389,13 @@ func Test_wrappedPlugin_PostFilter(t *testing.T) {
 			originalPostFilterPlugin: fakePostFilterPlugin{},
 			args: args{
 				pod: &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pod1", Namespace: "default"}},
-				filteredNodeStatusMap: framework.NodeToStatusMap{
-					"node1": framework.NewStatus(framework.UnschedulableAndUnresolvable, ""),
-					"node2": framework.NewStatus(framework.UnschedulableAndUnresolvable, ""),
-				},
+				filteredNodeStatusMap: framework.NewNodeToStatus(
+					map[string]*framework.Status{
+						"node1": framework.NewStatus(framework.UnschedulableAndUnresolvable, ""),
+						"node2": framework.NewStatus(framework.UnschedulableAndUnresolvable, ""),
+					},
+					nil,
+				),
 			},
 			wantResult: &framework.PostFilterResult{
 				NominatingInfo: &framework.NominatingInfo{
@@ -403,14 +406,17 @@ func Test_wrappedPlugin_PostFilter(t *testing.T) {
 		},
 		{
 			name:                     "success when it is not post filter plugin",
-			prepareStoreFn:           func(m *mock_plugin.MockStore) {},
+			prepareStoreFn:           func(_ *mock_plugin.MockStore) {},
 			originalPostFilterPlugin: nil, // don't have post filter plugin
 			args: args{
 				pod: &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pod1"}},
-				filteredNodeStatusMap: framework.NodeToStatusMap{
-					"node1": framework.NewStatus(framework.UnschedulableAndUnresolvable, ""),
-					"node2": framework.NewStatus(framework.UnschedulableAndUnresolvable, ""),
-				},
+				filteredNodeStatusMap: framework.NewNodeToStatus(
+					map[string]*framework.Status{
+						"node1": framework.NewStatus(framework.UnschedulableAndUnresolvable, ""),
+						"node2": framework.NewStatus(framework.UnschedulableAndUnresolvable, ""),
+					},
+					nil,
+				),
 			},
 			wantResult: nil,
 			wantStatus: framework.NewStatus(framework.Unschedulable),
@@ -428,13 +434,16 @@ func Test_wrappedPlugin_PostFilter(t *testing.T) {
 			originalPostFilterPlugin: fakeMustFailWrappedPlugin{},
 			args: args{
 				pod: &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pod1", Namespace: "default"}},
-				filteredNodeStatusMap: framework.NodeToStatusMap{
-					"node1": framework.NewStatus(framework.UnschedulableAndUnresolvable, ""),
-					"node2": framework.NewStatus(framework.UnschedulableAndUnresolvable, ""),
-				},
+				filteredNodeStatusMap: framework.NewNodeToStatus(
+					map[string]*framework.Status{
+						"node1": framework.NewStatus(framework.UnschedulableAndUnresolvable, ""),
+						"node2": framework.NewStatus(framework.UnschedulableAndUnresolvable, ""),
+					},
+					nil,
+				),
 			},
 			wantResult: nil,
-			wantStatus: framework.AsStatus(errors.New("postFilter failed")),
+			wantStatus: framework.AsStatus(errPost),
 		},
 	}
 	for _, tt := range tests {
@@ -461,7 +470,7 @@ func Test_wrappedPlugin_PostFilter_WithPluginExtender(t *testing.T) {
 
 	type args struct {
 		pod                   *v1.Pod
-		filteredNodeStatusMap framework.NodeToStatusMap
+		filteredNodeStatusMap framework.NodeToStatusReader
 	}
 	tests := []struct {
 		name              string
@@ -500,10 +509,13 @@ func Test_wrappedPlugin_PostFilter_WithPluginExtender(t *testing.T) {
 			},
 			args: args{
 				pod: &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pod1", Namespace: "default"}},
-				filteredNodeStatusMap: framework.NodeToStatusMap{
-					"node1": framework.NewStatus(framework.UnschedulableAndUnresolvable, ""),
-					"node2": framework.NewStatus(framework.UnschedulableAndUnresolvable, ""),
-				},
+				filteredNodeStatusMap: framework.NewNodeToStatus(
+					map[string]*framework.Status{
+						"node1": framework.NewStatus(framework.UnschedulableAndUnresolvable, ""),
+						"node2": framework.NewStatus(framework.UnschedulableAndUnresolvable, ""),
+					},
+					nil,
+				),
 			},
 			wantResult: &framework.PostFilterResult{
 				NominatingInfo: &framework.NominatingInfo{
@@ -537,10 +549,13 @@ func Test_wrappedPlugin_PostFilter_WithPluginExtender(t *testing.T) {
 			},
 			args: args{
 				pod: &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pod1", Namespace: "default"}},
-				filteredNodeStatusMap: framework.NodeToStatusMap{
-					"node1": framework.NewStatus(framework.UnschedulableAndUnresolvable, ""),
-					"node2": framework.NewStatus(framework.UnschedulableAndUnresolvable, ""),
-				},
+				filteredNodeStatusMap: framework.NewNodeToStatus(
+					map[string]*framework.Status{
+						"node1": framework.NewStatus(framework.UnschedulableAndUnresolvable, ""),
+						"node2": framework.NewStatus(framework.UnschedulableAndUnresolvable, ""),
+					},
+					nil,
+				),
 			},
 			wantResult: &framework.PostFilterResult{
 				NominatingInfo: &framework.NominatingInfo{
@@ -551,17 +566,20 @@ func Test_wrappedPlugin_PostFilter_WithPluginExtender(t *testing.T) {
 		},
 		{
 			name: "return BeforeFilter's results when BeforeFilter is fails",
-			prepareEachMockFn: func(ctx context.Context, s *mock_plugin.MockStore, p *mock_plugin.MockPostFilterPlugin, fe *mock_plugin.MockPostFilterPluginExtender, as args) {
+			prepareEachMockFn: func(ctx context.Context, _ *mock_plugin.MockStore, p *mock_plugin.MockPostFilterPlugin, fe *mock_plugin.MockPostFilterPluginExtender, as args) {
 				failure := framework.NewStatus(framework.Error, "BeforePostFilter returned")
 				fe.EXPECT().BeforePostFilter(ctx, nil, as.pod, as.filteredNodeStatusMap).Return(nil, failure)
 				p.EXPECT().Name().Return("fakePostFilterPlugin").AnyTimes()
 			},
 			args: args{
 				pod: &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pod1", Namespace: "default"}},
-				filteredNodeStatusMap: framework.NodeToStatusMap{
-					"node1": framework.NewStatus(framework.UnschedulableAndUnresolvable, ""),
-					"node2": framework.NewStatus(framework.UnschedulableAndUnresolvable, ""),
-				},
+				filteredNodeStatusMap: framework.NewNodeToStatus(
+					map[string]*framework.Status{
+						"node1": framework.NewStatus(framework.UnschedulableAndUnresolvable, ""),
+						"node2": framework.NewStatus(framework.UnschedulableAndUnresolvable, ""),
+					},
+					nil,
+				),
 			},
 			wantResult: nil,
 			wantStatus: framework.NewStatus(framework.Error, "BeforePostFilter returned"),
@@ -591,10 +609,13 @@ func Test_wrappedPlugin_PostFilter_WithPluginExtender(t *testing.T) {
 			},
 			args: args{
 				pod: &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pod1", Namespace: "default"}},
-				filteredNodeStatusMap: framework.NodeToStatusMap{
-					"node1": framework.NewStatus(framework.UnschedulableAndUnresolvable, ""),
-					"node2": framework.NewStatus(framework.UnschedulableAndUnresolvable, ""),
-				},
+				filteredNodeStatusMap: framework.NewNodeToStatus(
+					map[string]*framework.Status{
+						"node1": framework.NewStatus(framework.UnschedulableAndUnresolvable, ""),
+						"node2": framework.NewStatus(framework.UnschedulableAndUnresolvable, ""),
+					},
+					nil,
+				),
 			},
 			wantResult: nil,
 			wantStatus: framework.NewStatus(framework.Error, "AfterPostFilter returned"),
@@ -693,7 +714,7 @@ func Test_wrappedPlugin_NormalizeScore(t *testing.T) {
 		},
 		{
 			name:                "return score 0 when it is not filter plugin",
-			prepareStoreFn:      func(m *mock_plugin.MockStore) {},
+			prepareStoreFn:      func(_ *mock_plugin.MockStore) {},
 			originalScorePlugin: nil, // don't have filter plugin
 			args: args{
 				pod: &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pod1"}},
@@ -708,7 +729,7 @@ func Test_wrappedPlugin_NormalizeScore(t *testing.T) {
 		},
 		{
 			name:                "fail when original plugin return non-success",
-			prepareStoreFn:      func(m *mock_plugin.MockStore) {},
+			prepareStoreFn:      func(_ *mock_plugin.MockStore) {},
 			originalScorePlugin: fakeMustFailWrappedPlugin{},
 			args: args{
 				pod: &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pod1", Namespace: "default"}},
@@ -719,7 +740,7 @@ func Test_wrappedPlugin_NormalizeScore(t *testing.T) {
 					},
 				},
 			},
-			want: framework.AsStatus(errors.New("normalize failed")),
+			want: framework.AsStatus(errNormalize),
 		},
 	}
 	for _, tt := range tests {
@@ -758,12 +779,12 @@ func Test_wrappedPlugin_NormalizeScore_WithPluginExtender(t *testing.T) {
 		{
 			name: "return AfterNormalizeScore's results when NormalizeScore is successful",
 			prepareEachMockFn: func(ctx context.Context, s *mock_plugin.MockStore, se *mock_plugin.MockScoreExtensions, sp *mock_plugin.MockScorePlugin, spe *mock_plugin.MockNormalizeScorePluginExtender, as args) {
-				calOnNormalizeScore := func(ctx context.Context, state *framework.CycleState, pod *v1.Pod, scores framework.NodeScoreList) {
+				calOnNormalizeScore := func(_ context.Context, _ *framework.CycleState, _ *v1.Pod, scores framework.NodeScoreList) {
 					for i := range scores {
 						scores[i].Score += 1000
 					}
 				}
-				calOnAfterNormalizeScore := func(ctx context.Context, state *framework.CycleState, pod *v1.Pod, scores framework.NodeScoreList, fstatus *framework.Status) {
+				calOnAfterNormalizeScore := func(_ context.Context, _ *framework.CycleState, _ *v1.Pod, scores framework.NodeScoreList, _ *framework.Status) {
 					for i := range scores {
 						scores[i].Score += 1000
 					}
@@ -806,13 +827,13 @@ func Test_wrappedPlugin_NormalizeScore_WithPluginExtender(t *testing.T) {
 		},
 		{
 			name: "return AfterNormalizeScore's results when NormalizeScore is fails",
-			prepareEachMockFn: func(ctx context.Context, s *mock_plugin.MockStore, se *mock_plugin.MockScoreExtensions, sp *mock_plugin.MockScorePlugin, spe *mock_plugin.MockNormalizeScorePluginExtender, as args) {
-				calOnNormalizeScore := func(ctx context.Context, state *framework.CycleState, pod *v1.Pod, scores framework.NodeScoreList) {
+			prepareEachMockFn: func(ctx context.Context, _ *mock_plugin.MockStore, se *mock_plugin.MockScoreExtensions, sp *mock_plugin.MockScorePlugin, spe *mock_plugin.MockNormalizeScorePluginExtender, as args) {
+				calOnNormalizeScore := func(_ context.Context, _ *framework.CycleState, _ *v1.Pod, scores framework.NodeScoreList) {
 					for i := range scores {
 						scores[i].Score += 1000
 					}
 				}
-				calOnAfterNormalizeScore := func(ctx context.Context, state *framework.CycleState, pod *v1.Pod, scores framework.NodeScoreList, fstatus *framework.Status) {
+				calOnAfterNormalizeScore := func(_ context.Context, _ *framework.CycleState, _ *v1.Pod, scores framework.NodeScoreList, _ *framework.Status) {
 					for i := range scores {
 						scores[i].Score += 1000
 					}
@@ -855,12 +876,12 @@ func Test_wrappedPlugin_NormalizeScore_WithPluginExtender(t *testing.T) {
 		{
 			name: "return AfterNormalizeScore's results, when NormalizeScore is successful and AfterNormalizeScore is fails",
 			prepareEachMockFn: func(ctx context.Context, s *mock_plugin.MockStore, se *mock_plugin.MockScoreExtensions, sp *mock_plugin.MockScorePlugin, spe *mock_plugin.MockNormalizeScorePluginExtender, as args) {
-				calOnNormalizeScore := func(ctx context.Context, state *framework.CycleState, pod *v1.Pod, scores framework.NodeScoreList) {
+				calOnNormalizeScore := func(_ context.Context, _ *framework.CycleState, _ *v1.Pod, scores framework.NodeScoreList) {
 					for i := range scores {
 						scores[i].Score += 1000
 					}
 				}
-				calOnAfterNormalizeScore := func(ctx context.Context, state *framework.CycleState, pod *v1.Pod, scores framework.NodeScoreList, fstatus *framework.Status) {
+				calOnAfterNormalizeScore := func(_ context.Context, _ *framework.CycleState, _ *v1.Pod, scores framework.NodeScoreList, _ *framework.Status) {
 					for i := range scores {
 						scores[i].Score += 1000
 					}
@@ -903,8 +924,8 @@ func Test_wrappedPlugin_NormalizeScore_WithPluginExtender(t *testing.T) {
 		},
 		{
 			name: "return BeforeNormalizeScore when BeforeNormalizeScore is fails",
-			prepareEachMockFn: func(ctx context.Context, s *mock_plugin.MockStore, se *mock_plugin.MockScoreExtensions, sp *mock_plugin.MockScorePlugin, spe *mock_plugin.MockNormalizeScorePluginExtender, as args) {
-				calOnNormalizeScore := func(ctx context.Context, state *framework.CycleState, pod *v1.Pod, scores framework.NodeScoreList) {
+			prepareEachMockFn: func(ctx context.Context, _ *mock_plugin.MockStore, se *mock_plugin.MockScoreExtensions, sp *mock_plugin.MockScorePlugin, spe *mock_plugin.MockNormalizeScorePluginExtender, as args) {
+				calOnNormalizeScore := func(_ context.Context, _ *framework.CycleState, _ *v1.Pod, scores framework.NodeScoreList) {
 					for i := range scores {
 						scores[i].Score += 1000
 					}
@@ -997,7 +1018,7 @@ func Test_wrappedPlugin_Score(t *testing.T) {
 		},
 		{
 			name:                "return score 0 when it is not filter plugin",
-			prepareStoreFn:      func(m *mock_plugin.MockStore) {},
+			prepareStoreFn:      func(_ *mock_plugin.MockStore) {},
 			originalScorePlugin: nil, // don't have filter plugin
 			args: args{
 				pod:      &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pod1"}},
@@ -1008,14 +1029,14 @@ func Test_wrappedPlugin_Score(t *testing.T) {
 		},
 		{
 			name:                "fail when original plugin return non-success",
-			prepareStoreFn:      func(m *mock_plugin.MockStore) {},
+			prepareStoreFn:      func(_ *mock_plugin.MockStore) {},
 			originalScorePlugin: fakeMustFailWrappedPlugin{},
 			args: args{
 				pod:      &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pod1", Namespace: "default"}},
 				nodename: "node1",
 			},
 			want:       0,
-			wantstatus: framework.AsStatus(errors.New("score failed")),
+			wantstatus: framework.AsStatus(errScore),
 		},
 	}
 	for _, tt := range tests {
@@ -1091,7 +1112,7 @@ func Test_wrappedPlugin_Score_WithPluginExtender(t *testing.T) {
 		},
 		{
 			name: "return Before's results & does not call Score, if BeforeScore fails",
-			prepareEachMockFn: func(ctx context.Context, s *mock_plugin.MockStore, p *mock_plugin.MockScorePlugin, se *mock_plugin.MockScorePluginExtender, as args) {
+			prepareEachMockFn: func(ctx context.Context, _ *mock_plugin.MockStore, p *mock_plugin.MockScorePlugin, se *mock_plugin.MockScorePluginExtender, as args) {
 				failure := framework.NewStatus(framework.Error, "BeforeScore returned")
 				se.EXPECT().BeforeScore(ctx, nil, as.pod, "node1").Return(int64(1111), failure)
 				p.EXPECT().Name().Return("fakeScorePlugin").AnyTimes()
@@ -1181,6 +1202,12 @@ func Test_wrappedPlugin_PreScore(t *testing.T) {
 
 	testPod := &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pod", Namespace: "namespace"}}
 	testNodes := []*v1.Node{{ObjectMeta: metav1.ObjectMeta{Name: "node"}}}
+	testNodeInfos := make([]*framework.NodeInfo, len(testNodes))
+	for i, node := range testNodes {
+		nodeInfo := &framework.NodeInfo{}
+		nodeInfo.SetNode(node)
+		testNodeInfos[i] = nodeInfo
+	}
 
 	tests := []struct {
 		name           string
@@ -1191,58 +1218,58 @@ func Test_wrappedPlugin_PreScore(t *testing.T) {
 		{
 			name: "happy with extender",
 			prepareMocksFn: func(s *mock_plugin.MockStore, se *mock_plugin.MockPreScorePlugin, extender *mock_plugin.MockPreScorePluginExtender) {
-				extender.EXPECT().BeforePreScore(gomock.Any(), gomock.Any(), testPod, testNodes).Return(framework.NewStatus(framework.Success))
-				se.EXPECT().PreScore(gomock.Any(), gomock.Any(), testPod, testNodes).Return(framework.NewStatus(framework.Success))
+				extender.EXPECT().BeforePreScore(gomock.Any(), gomock.Any(), testPod, testNodeInfos).Return(framework.NewStatus(framework.Success))
+				se.EXPECT().PreScore(gomock.Any(), gomock.Any(), testPod, testNodeInfos).Return(framework.NewStatus(framework.Success))
 				se.EXPECT().Name().Return("name")
 				s.EXPECT().AddPreScoreResult("namespace", "pod", "name", resultstore.SuccessMessage)
-				extender.EXPECT().AfterPreScore(gomock.Any(), gomock.Any(), testPod, testNodes, framework.NewStatus(framework.Success)).Return(framework.NewStatus(framework.Success))
+				extender.EXPECT().AfterPreScore(gomock.Any(), gomock.Any(), testPod, testNodeInfos, framework.NewStatus(framework.Success)).Return(framework.NewStatus(framework.Success))
 			},
 			want: framework.NewStatus(framework.Success),
 		},
 		{
 			name: "unhappy: BeforePreScore returns non-success",
-			prepareMocksFn: func(s *mock_plugin.MockStore, se *mock_plugin.MockPreScorePlugin, extender *mock_plugin.MockPreScorePluginExtender) {
-				extender.EXPECT().BeforePreScore(gomock.Any(), gomock.Any(), testPod, testNodes).Return(framework.NewStatus(framework.Unschedulable))
+			prepareMocksFn: func(_ *mock_plugin.MockStore, _ *mock_plugin.MockPreScorePlugin, extender *mock_plugin.MockPreScorePluginExtender) {
+				extender.EXPECT().BeforePreScore(gomock.Any(), gomock.Any(), testPod, testNodeInfos).Return(framework.NewStatus(framework.Unschedulable))
 			},
 			want: framework.NewStatus(framework.Unschedulable),
 		},
 		{
 			name: "unhappy: AfterPreScore returns non-success",
 			prepareMocksFn: func(s *mock_plugin.MockStore, se *mock_plugin.MockPreScorePlugin, extender *mock_plugin.MockPreScorePluginExtender) {
-				extender.EXPECT().BeforePreScore(gomock.Any(), gomock.Any(), testPod, testNodes).Return(framework.NewStatus(framework.Success))
-				se.EXPECT().PreScore(gomock.Any(), gomock.Any(), testPod, testNodes).Return(framework.NewStatus(framework.Success))
+				extender.EXPECT().BeforePreScore(gomock.Any(), gomock.Any(), testPod, testNodeInfos).Return(framework.NewStatus(framework.Success))
+				se.EXPECT().PreScore(gomock.Any(), gomock.Any(), testPod, testNodeInfos).Return(framework.NewStatus(framework.Success))
 				se.EXPECT().Name().Return("name")
 				s.EXPECT().AddPreScoreResult("namespace", "pod", "name", resultstore.SuccessMessage)
-				extender.EXPECT().AfterPreScore(gomock.Any(), gomock.Any(), testPod, testNodes, framework.NewStatus(framework.Success)).Return(framework.NewStatus(framework.Unschedulable))
+				extender.EXPECT().AfterPreScore(gomock.Any(), gomock.Any(), testPod, testNodeInfos, framework.NewStatus(framework.Success)).Return(framework.NewStatus(framework.Unschedulable))
 			},
 			want: framework.NewStatus(framework.Unschedulable),
 		},
 		{
 			name: "unhappy: PreScore and AfterPreScore return non-success",
 			prepareMocksFn: func(s *mock_plugin.MockStore, se *mock_plugin.MockPreScorePlugin, extender *mock_plugin.MockPreScorePluginExtender) {
-				extender.EXPECT().BeforePreScore(gomock.Any(), gomock.Any(), testPod, testNodes).Return(framework.NewStatus(framework.Success))
-				se.EXPECT().PreScore(gomock.Any(), gomock.Any(), testPod, testNodes).Return(framework.NewStatus(framework.Unschedulable, "error"))
+				extender.EXPECT().BeforePreScore(gomock.Any(), gomock.Any(), testPod, testNodeInfos).Return(framework.NewStatus(framework.Success))
+				se.EXPECT().PreScore(gomock.Any(), gomock.Any(), testPod, testNodeInfos).Return(framework.NewStatus(framework.Unschedulable, "error"))
 				se.EXPECT().Name().Return("name")
 				s.EXPECT().AddPreScoreResult("namespace", "pod", "name", "error")
-				extender.EXPECT().AfterPreScore(gomock.Any(), gomock.Any(), testPod, testNodes, framework.NewStatus(framework.Unschedulable, "error")).Return(framework.NewStatus(framework.Unschedulable))
+				extender.EXPECT().AfterPreScore(gomock.Any(), gomock.Any(), testPod, testNodeInfos, framework.NewStatus(framework.Unschedulable, "error")).Return(framework.NewStatus(framework.Unschedulable))
 			},
 			want: framework.NewStatus(framework.Unschedulable),
 		},
 		{
 			name: "happy: PreScore returns non-success, but AfterPreScore return success",
 			prepareMocksFn: func(s *mock_plugin.MockStore, se *mock_plugin.MockPreScorePlugin, extender *mock_plugin.MockPreScorePluginExtender) {
-				extender.EXPECT().BeforePreScore(gomock.Any(), gomock.Any(), testPod, testNodes).Return(framework.NewStatus(framework.Success))
-				se.EXPECT().PreScore(gomock.Any(), gomock.Any(), testPod, testNodes).Return(framework.NewStatus(framework.Unschedulable, "error"))
+				extender.EXPECT().BeforePreScore(gomock.Any(), gomock.Any(), testPod, testNodeInfos).Return(framework.NewStatus(framework.Success))
+				se.EXPECT().PreScore(gomock.Any(), gomock.Any(), testPod, testNodeInfos).Return(framework.NewStatus(framework.Unschedulable, "error"))
 				se.EXPECT().Name().Return("name")
 				s.EXPECT().AddPreScoreResult("namespace", "pod", "name", "error")
-				extender.EXPECT().AfterPreScore(gomock.Any(), gomock.Any(), testPod, testNodes, framework.NewStatus(framework.Unschedulable, "error")).Return(framework.NewStatus(framework.Success))
+				extender.EXPECT().AfterPreScore(gomock.Any(), gomock.Any(), testPod, testNodeInfos, framework.NewStatus(framework.Unschedulable, "error")).Return(framework.NewStatus(framework.Success))
 			},
 			want: framework.NewStatus(framework.Success),
 		},
 		{
 			name: "happy without extender",
-			prepareMocksFn: func(s *mock_plugin.MockStore, se *mock_plugin.MockPreScorePlugin, extender *mock_plugin.MockPreScorePluginExtender) {
-				se.EXPECT().PreScore(gomock.Any(), gomock.Any(), testPod, testNodes).Return(framework.NewStatus(framework.Success))
+			prepareMocksFn: func(s *mock_plugin.MockStore, se *mock_plugin.MockPreScorePlugin, _ *mock_plugin.MockPreScorePluginExtender) {
+				se.EXPECT().PreScore(gomock.Any(), gomock.Any(), testPod, testNodeInfos).Return(framework.NewStatus(framework.Success))
 				se.EXPECT().Name().Return("name")
 				s.EXPECT().AddPreScoreResult("namespace", "pod", "name", resultstore.SuccessMessage)
 			},
@@ -1267,7 +1294,7 @@ func Test_wrappedPlugin_PreScore(t *testing.T) {
 			if !tt.noExtender {
 				w.preScorePluginExtender = ex
 			}
-			assert.Equalf(t, tt.want, w.PreScore(context.Background(), framework.NewCycleState(), testPod, testNodes), "PreScore(ctx, cyclestate, %v, %v)", testPod, testNodes)
+			assert.Equalf(t, tt.want, w.PreScore(context.Background(), framework.NewCycleState(), testPod, testNodeInfos), "PreScore(ctx, cyclestate, %v, %v)", testPod, testNodes)
 		})
 	}
 }
@@ -1287,67 +1314,67 @@ func Test_wrappedPlugin_PreFilter(t *testing.T) {
 			name: "happy with extender",
 			prepareMocksFn: func(s *mock_plugin.MockStore, se *mock_plugin.MockPreFilterPlugin, extender *mock_plugin.MockPreFilterPluginExtender) {
 				extender.EXPECT().BeforePreFilter(gomock.Any(), gomock.Any(), testPod).Return(nil, framework.NewStatus(framework.Success))
-				se.EXPECT().PreFilter(gomock.Any(), gomock.Any(), testPod).Return(&framework.PreFilterResult{NodeNames: sets.NewString("hoge")}, framework.NewStatus(framework.Success))
+				se.EXPECT().PreFilter(gomock.Any(), gomock.Any(), testPod).Return(&framework.PreFilterResult{NodeNames: sets.New("hoge")}, framework.NewStatus(framework.Success))
 				se.EXPECT().Name().Return("name")
-				s.EXPECT().AddPreFilterResult("namespace", "pod", "name", resultstore.SuccessMessage, &framework.PreFilterResult{NodeNames: sets.NewString("hoge")})
-				extender.EXPECT().AfterPreFilter(gomock.Any(), gomock.Any(), testPod, &framework.PreFilterResult{NodeNames: sets.NewString("hoge")}, framework.NewStatus(framework.Success)).Return(&framework.PreFilterResult{NodeNames: sets.NewString("hoge")}, framework.NewStatus(framework.Success))
+				s.EXPECT().AddPreFilterResult("namespace", "pod", "name", resultstore.SuccessMessage, &framework.PreFilterResult{NodeNames: sets.New("hoge")})
+				extender.EXPECT().AfterPreFilter(gomock.Any(), gomock.Any(), testPod, &framework.PreFilterResult{NodeNames: sets.New("hoge")}, framework.NewStatus(framework.Success)).Return(&framework.PreFilterResult{NodeNames: sets.New("hoge")}, framework.NewStatus(framework.Success))
 			},
-			want:  &framework.PreFilterResult{NodeNames: sets.NewString("hoge")},
+			want:  &framework.PreFilterResult{NodeNames: sets.New("hoge")},
 			want1: framework.NewStatus(framework.Success),
 		},
 		{
 			name: "unhappy: BeforePreFilter returns non-success",
-			prepareMocksFn: func(s *mock_plugin.MockStore, se *mock_plugin.MockPreFilterPlugin, extender *mock_plugin.MockPreFilterPluginExtender) {
-				extender.EXPECT().BeforePreFilter(gomock.Any(), gomock.Any(), testPod).Return(&framework.PreFilterResult{NodeNames: sets.NewString("hoge")}, framework.NewStatus(framework.Unschedulable))
+			prepareMocksFn: func(_ *mock_plugin.MockStore, _ *mock_plugin.MockPreFilterPlugin, extender *mock_plugin.MockPreFilterPluginExtender) {
+				extender.EXPECT().BeforePreFilter(gomock.Any(), gomock.Any(), testPod).Return(&framework.PreFilterResult{NodeNames: sets.New("hoge")}, framework.NewStatus(framework.Unschedulable))
 			},
-			want:  &framework.PreFilterResult{NodeNames: sets.NewString("hoge")},
+			want:  &framework.PreFilterResult{NodeNames: sets.New("hoge")},
 			want1: framework.NewStatus(framework.Unschedulable),
 		},
 		{
 			name: "unhappy: AfterPreFilter returns non-success",
 			prepareMocksFn: func(s *mock_plugin.MockStore, se *mock_plugin.MockPreFilterPlugin, extender *mock_plugin.MockPreFilterPluginExtender) {
 				extender.EXPECT().BeforePreFilter(gomock.Any(), gomock.Any(), testPod).Return(nil, framework.NewStatus(framework.Success))
-				se.EXPECT().PreFilter(gomock.Any(), gomock.Any(), testPod).Return(&framework.PreFilterResult{NodeNames: sets.NewString("hoge")}, framework.NewStatus(framework.Success))
+				se.EXPECT().PreFilter(gomock.Any(), gomock.Any(), testPod).Return(&framework.PreFilterResult{NodeNames: sets.New("hoge")}, framework.NewStatus(framework.Success))
 				se.EXPECT().Name().Return("name")
-				s.EXPECT().AddPreFilterResult("namespace", "pod", "name", resultstore.SuccessMessage, &framework.PreFilterResult{NodeNames: sets.NewString("hoge")})
-				extender.EXPECT().AfterPreFilter(gomock.Any(), gomock.Any(), testPod, &framework.PreFilterResult{NodeNames: sets.NewString("hoge")}, framework.NewStatus(framework.Success)).Return(&framework.PreFilterResult{NodeNames: sets.NewString("hoge")}, framework.NewStatus(framework.Unschedulable))
+				s.EXPECT().AddPreFilterResult("namespace", "pod", "name", resultstore.SuccessMessage, &framework.PreFilterResult{NodeNames: sets.New("hoge")})
+				extender.EXPECT().AfterPreFilter(gomock.Any(), gomock.Any(), testPod, &framework.PreFilterResult{NodeNames: sets.New("hoge")}, framework.NewStatus(framework.Success)).Return(&framework.PreFilterResult{NodeNames: sets.New("hoge")}, framework.NewStatus(framework.Unschedulable))
 			},
-			want:  &framework.PreFilterResult{NodeNames: sets.NewString("hoge")},
+			want:  &framework.PreFilterResult{NodeNames: sets.New("hoge")},
 			want1: framework.NewStatus(framework.Unschedulable),
 		},
 		{
 			name: "unhappy: PreFilter and AfterPreFilter return non-success",
 			prepareMocksFn: func(s *mock_plugin.MockStore, se *mock_plugin.MockPreFilterPlugin, extender *mock_plugin.MockPreFilterPluginExtender) {
 				extender.EXPECT().BeforePreFilter(gomock.Any(), gomock.Any(), testPod).Return(nil, framework.NewStatus(framework.Success))
-				se.EXPECT().PreFilter(gomock.Any(), gomock.Any(), testPod).Return(&framework.PreFilterResult{NodeNames: sets.NewString("hoge")}, framework.NewStatus(framework.Unschedulable, "error"))
+				se.EXPECT().PreFilter(gomock.Any(), gomock.Any(), testPod).Return(&framework.PreFilterResult{NodeNames: sets.New("hoge")}, framework.NewStatus(framework.Unschedulable, "error"))
 				se.EXPECT().Name().Return("name")
-				s.EXPECT().AddPreFilterResult("namespace", "pod", "name", "error", &framework.PreFilterResult{NodeNames: sets.NewString("hoge")})
-				extender.EXPECT().AfterPreFilter(gomock.Any(), gomock.Any(), testPod, &framework.PreFilterResult{NodeNames: sets.NewString("hoge")}, framework.NewStatus(framework.Unschedulable, "error")).Return(&framework.PreFilterResult{NodeNames: sets.NewString("hoge")}, framework.NewStatus(framework.Unschedulable))
+				s.EXPECT().AddPreFilterResult("namespace", "pod", "name", "error", &framework.PreFilterResult{NodeNames: sets.New("hoge")})
+				extender.EXPECT().AfterPreFilter(gomock.Any(), gomock.Any(), testPod, &framework.PreFilterResult{NodeNames: sets.New("hoge")}, framework.NewStatus(framework.Unschedulable, "error")).Return(&framework.PreFilterResult{NodeNames: sets.New("hoge")}, framework.NewStatus(framework.Unschedulable))
 			},
-			want:  &framework.PreFilterResult{NodeNames: sets.NewString("hoge")},
+			want:  &framework.PreFilterResult{NodeNames: sets.New("hoge")},
 			want1: framework.NewStatus(framework.Unschedulable),
 		},
 		{
 			name: "happy: PreFilter returns non-success, but AfterPreFilter return success",
 			prepareMocksFn: func(s *mock_plugin.MockStore, se *mock_plugin.MockPreFilterPlugin, extender *mock_plugin.MockPreFilterPluginExtender) {
 				extender.EXPECT().BeforePreFilter(gomock.Any(), gomock.Any(), testPod).Return(nil, framework.NewStatus(framework.Success))
-				se.EXPECT().PreFilter(gomock.Any(), gomock.Any(), testPod).Return(&framework.PreFilterResult{NodeNames: sets.NewString("hoge")}, framework.NewStatus(framework.Unschedulable, "error"))
+				se.EXPECT().PreFilter(gomock.Any(), gomock.Any(), testPod).Return(&framework.PreFilterResult{NodeNames: sets.New("hoge")}, framework.NewStatus(framework.Unschedulable, "error"))
 				se.EXPECT().Name().Return("name")
-				s.EXPECT().AddPreFilterResult("namespace", "pod", "name", "error", &framework.PreFilterResult{NodeNames: sets.NewString("hoge")})
-				extender.EXPECT().AfterPreFilter(gomock.Any(), gomock.Any(), testPod, &framework.PreFilterResult{NodeNames: sets.NewString("hoge")}, framework.NewStatus(framework.Unschedulable, "error")).Return(&framework.PreFilterResult{NodeNames: sets.NewString("hoge2")}, framework.NewStatus(framework.Success))
+				s.EXPECT().AddPreFilterResult("namespace", "pod", "name", "error", &framework.PreFilterResult{NodeNames: sets.New("hoge")})
+				extender.EXPECT().AfterPreFilter(gomock.Any(), gomock.Any(), testPod, &framework.PreFilterResult{NodeNames: sets.New("hoge")}, framework.NewStatus(framework.Unschedulable, "error")).Return(&framework.PreFilterResult{NodeNames: sets.New("hoge2")}, framework.NewStatus(framework.Success))
 			},
-			want:  &framework.PreFilterResult{NodeNames: sets.NewString("hoge2")},
+			want:  &framework.PreFilterResult{NodeNames: sets.New("hoge2")},
 			want1: framework.NewStatus(framework.Success),
 		},
 		{
 			name: "happy without extender",
-			prepareMocksFn: func(s *mock_plugin.MockStore, se *mock_plugin.MockPreFilterPlugin, extender *mock_plugin.MockPreFilterPluginExtender) {
-				se.EXPECT().PreFilter(gomock.Any(), gomock.Any(), testPod).Return(&framework.PreFilterResult{NodeNames: sets.NewString("hoge")}, framework.NewStatus(framework.Success))
+			prepareMocksFn: func(s *mock_plugin.MockStore, se *mock_plugin.MockPreFilterPlugin, _ *mock_plugin.MockPreFilterPluginExtender) {
+				se.EXPECT().PreFilter(gomock.Any(), gomock.Any(), testPod).Return(&framework.PreFilterResult{NodeNames: sets.New("hoge")}, framework.NewStatus(framework.Success))
 				se.EXPECT().Name().Return("name")
-				s.EXPECT().AddPreFilterResult("namespace", "pod", "name", resultstore.SuccessMessage, &framework.PreFilterResult{NodeNames: sets.NewString("hoge")})
+				s.EXPECT().AddPreFilterResult("namespace", "pod", "name", resultstore.SuccessMessage, &framework.PreFilterResult{NodeNames: sets.New("hoge")})
 			},
 			noExtender: true,
-			want:       &framework.PreFilterResult{NodeNames: sets.NewString("hoge")},
+			want:       &framework.PreFilterResult{NodeNames: sets.New("hoge")},
 			want1:      framework.NewStatus(framework.Success),
 		},
 	}
@@ -1403,7 +1430,7 @@ func Test_wrappedPlugin_Permit(t *testing.T) {
 		},
 		{
 			name: "unhappy: BeforePermit returns non-success",
-			prepareMocksFn: func(s *mock_plugin.MockStore, se *mock_plugin.MockPermitPlugin, extender *mock_plugin.MockPermitPluginExtender) {
+			prepareMocksFn: func(_ *mock_plugin.MockStore, _ *mock_plugin.MockPermitPlugin, extender *mock_plugin.MockPermitPluginExtender) {
 				extender.EXPECT().BeforePermit(gomock.Any(), gomock.Any(), testPod, testNodeName).Return(framework.NewStatus(framework.Unschedulable), time.Duration(1))
 			},
 			want:  framework.NewStatus(framework.Unschedulable),
@@ -1447,7 +1474,7 @@ func Test_wrappedPlugin_Permit(t *testing.T) {
 		},
 		{
 			name: "happy without extender",
-			prepareMocksFn: func(s *mock_plugin.MockStore, se *mock_plugin.MockPermitPlugin, extender *mock_plugin.MockPermitPluginExtender) {
+			prepareMocksFn: func(s *mock_plugin.MockStore, se *mock_plugin.MockPermitPlugin, _ *mock_plugin.MockPermitPluginExtender) {
 				se.EXPECT().Permit(gomock.Any(), gomock.Any(), testPod, testNodeName).Return(framework.NewStatus(framework.Success), time.Duration(1))
 				se.EXPECT().Name().Return("name")
 				s.EXPECT().AddPermitResult("namespace", "pod", "name", resultstore.SuccessMessage, time.Duration(1))
@@ -1506,7 +1533,7 @@ func Test_wrappedPlugin_Reserve(t *testing.T) {
 		},
 		{
 			name: "unhappy: BeforeReserve returns non-success",
-			prepareMocksFn: func(s *mock_plugin.MockStore, se *mock_plugin.MockReservePlugin, extender *mock_plugin.MockReservePluginExtender) {
+			prepareMocksFn: func(s *mock_plugin.MockStore, _ *mock_plugin.MockReservePlugin, extender *mock_plugin.MockReservePluginExtender) {
 				s.EXPECT().AddSelectedNode("namespace", "pod", "node")
 				extender.EXPECT().BeforeReserve(gomock.Any(), gomock.Any(), testPod, testNodeName).Return(framework.NewStatus(framework.Unschedulable))
 			},
@@ -1550,7 +1577,7 @@ func Test_wrappedPlugin_Reserve(t *testing.T) {
 		},
 		{
 			name: "happy without extnder",
-			prepareMocksFn: func(s *mock_plugin.MockStore, se *mock_plugin.MockReservePlugin, extender *mock_plugin.MockReservePluginExtender) {
+			prepareMocksFn: func(s *mock_plugin.MockStore, se *mock_plugin.MockReservePlugin, _ *mock_plugin.MockReservePluginExtender) {
 				s.EXPECT().AddSelectedNode("namespace", "pod", "node")
 				se.EXPECT().Reserve(gomock.Any(), gomock.Any(), testPod, testNodeName).Return(framework.NewStatus(framework.Success))
 				se.EXPECT().Name().Return("name")
@@ -1594,7 +1621,7 @@ func Test_wrappedPlugin_Unreserve(t *testing.T) {
 	}{
 		{
 			name: "happy with extender",
-			prepareMocksFn: func(s *mock_plugin.MockStore, se *mock_plugin.MockReservePlugin, extender *mock_plugin.MockReservePluginExtender) {
+			prepareMocksFn: func(_ *mock_plugin.MockStore, se *mock_plugin.MockReservePlugin, extender *mock_plugin.MockReservePluginExtender) {
 				extender.EXPECT().BeforeUnreserve(gomock.Any(), gomock.Any(), testPod, testNodeName).Return(framework.NewStatus(framework.Success))
 				se.EXPECT().Unreserve(gomock.Any(), gomock.Any(), testPod, testNodeName)
 				extender.EXPECT().AfterUnreserve(gomock.Any(), gomock.Any(), testPod, testNodeName)
@@ -1602,14 +1629,14 @@ func Test_wrappedPlugin_Unreserve(t *testing.T) {
 		},
 		{
 			name: "unhappy: BeforeUnreserve returns non-success",
-			prepareMocksFn: func(s *mock_plugin.MockStore, se *mock_plugin.MockReservePlugin, extender *mock_plugin.MockReservePluginExtender) {
+			prepareMocksFn: func(_ *mock_plugin.MockStore, se *mock_plugin.MockReservePlugin, extender *mock_plugin.MockReservePluginExtender) {
 				extender.EXPECT().BeforeUnreserve(gomock.Any(), gomock.Any(), testPod, testNodeName).Return(framework.NewStatus(framework.Unschedulable))
 				se.EXPECT().Name().Return("hoge")
 			},
 		},
 		{
 			name: "happy without extender",
-			prepareMocksFn: func(s *mock_plugin.MockStore, se *mock_plugin.MockReservePlugin, extender *mock_plugin.MockReservePluginExtender) {
+			prepareMocksFn: func(_ *mock_plugin.MockStore, se *mock_plugin.MockReservePlugin, _ *mock_plugin.MockReservePluginExtender) {
 				se.EXPECT().Unreserve(gomock.Any(), gomock.Any(), testPod, testNodeName)
 			},
 			noExtender: true,
@@ -1661,7 +1688,7 @@ func Test_wrappedPlugin_PreBind(t *testing.T) {
 		},
 		{
 			name: "unhappy: BeforePreBind returns non-success",
-			prepareMocksFn: func(s *mock_plugin.MockStore, se *mock_plugin.MockPreBindPlugin, extender *mock_plugin.MockPreBindPluginExtender) {
+			prepareMocksFn: func(_ *mock_plugin.MockStore, _ *mock_plugin.MockPreBindPlugin, extender *mock_plugin.MockPreBindPluginExtender) {
 				extender.EXPECT().BeforePreBind(gomock.Any(), gomock.Any(), testPod, testNodeName).Return(framework.NewStatus(framework.Unschedulable))
 			},
 			want: framework.NewStatus(framework.Unschedulable),
@@ -1701,7 +1728,7 @@ func Test_wrappedPlugin_PreBind(t *testing.T) {
 		},
 		{
 			name: "happy without extnder",
-			prepareMocksFn: func(s *mock_plugin.MockStore, se *mock_plugin.MockPreBindPlugin, extender *mock_plugin.MockPreBindPluginExtender) {
+			prepareMocksFn: func(s *mock_plugin.MockStore, se *mock_plugin.MockPreBindPlugin, _ *mock_plugin.MockPreBindPluginExtender) {
 				se.EXPECT().PreBind(gomock.Any(), gomock.Any(), testPod, testNodeName).Return(framework.NewStatus(framework.Success))
 				se.EXPECT().Name().Return("name")
 				s.EXPECT().AddPreBindResult("namespace", "pod", "name", resultstore.SuccessMessage)
@@ -1756,7 +1783,7 @@ func Test_wrappedPlugin_Bind(t *testing.T) {
 		},
 		{
 			name: "unhappy: BeforeBind returns non-success",
-			prepareMocksFn: func(s *mock_plugin.MockStore, se *mock_plugin.MockBindPlugin, extender *mock_plugin.MockBindPluginExtender) {
+			prepareMocksFn: func(_ *mock_plugin.MockStore, _ *mock_plugin.MockBindPlugin, extender *mock_plugin.MockBindPluginExtender) {
 				extender.EXPECT().BeforeBind(gomock.Any(), gomock.Any(), testPod, testNodeName).Return(framework.NewStatus(framework.Unschedulable))
 			},
 			want: framework.NewStatus(framework.Unschedulable),
@@ -1796,7 +1823,7 @@ func Test_wrappedPlugin_Bind(t *testing.T) {
 		},
 		{
 			name: "happy without extnder",
-			prepareMocksFn: func(s *mock_plugin.MockStore, se *mock_plugin.MockBindPlugin, extender *mock_plugin.MockBindPluginExtender) {
+			prepareMocksFn: func(s *mock_plugin.MockStore, se *mock_plugin.MockBindPlugin, _ *mock_plugin.MockBindPluginExtender) {
 				se.EXPECT().Bind(gomock.Any(), gomock.Any(), testPod, testNodeName).Return(framework.NewStatus(framework.Success))
 				se.EXPECT().Name().Return("name")
 				s.EXPECT().AddBindResult("namespace", "pod", "name", resultstore.SuccessMessage)
@@ -1848,7 +1875,7 @@ func Test_wrappedPlugin_PostBind(t *testing.T) {
 	}{
 		{
 			name: "happy with extender",
-			prepareMocksFn: func(s *mock_plugin.MockStore, se *mock_plugin.MockPostBindPlugin, extender *mock_plugin.MockPostBindPluginExtender) {
+			prepareMocksFn: func(_ *mock_plugin.MockStore, se *mock_plugin.MockPostBindPlugin, extender *mock_plugin.MockPostBindPluginExtender) {
 				extender.EXPECT().BeforePostBind(gomock.Any(), gomock.Any(), testPod, testNodeName).Return(framework.NewStatus(framework.Success))
 				se.EXPECT().PostBind(gomock.Any(), gomock.Any(), testPod, testNodeName)
 				extender.EXPECT().AfterPostBind(gomock.Any(), gomock.Any(), testPod, testNodeName)
@@ -1856,14 +1883,14 @@ func Test_wrappedPlugin_PostBind(t *testing.T) {
 		},
 		{
 			name: "unhappy: BeforePostBind returns non-success",
-			prepareMocksFn: func(s *mock_plugin.MockStore, se *mock_plugin.MockPostBindPlugin, extender *mock_plugin.MockPostBindPluginExtender) {
+			prepareMocksFn: func(_ *mock_plugin.MockStore, se *mock_plugin.MockPostBindPlugin, extender *mock_plugin.MockPostBindPluginExtender) {
 				extender.EXPECT().BeforePostBind(gomock.Any(), gomock.Any(), testPod, testNodeName).Return(framework.NewStatus(framework.Unschedulable))
 				se.EXPECT().Name().Return("hoge")
 			},
 		},
 		{
 			name: "happy without extender",
-			prepareMocksFn: func(s *mock_plugin.MockStore, se *mock_plugin.MockPostBindPlugin, extender *mock_plugin.MockPostBindPluginExtender) {
+			prepareMocksFn: func(_ *mock_plugin.MockStore, se *mock_plugin.MockPostBindPlugin, _ *mock_plugin.MockPostBindPluginExtender) {
 				se.EXPECT().PostBind(gomock.Any(), gomock.Any(), testPod, testNodeName)
 			},
 			noExtender: true,
@@ -1948,13 +1975,20 @@ func (fakeWrappedPlugin) Score(_ context.Context, _ *framework.CycleState, _ *v1
 // all method on this plugin will fail.
 type fakeMustFailWrappedPlugin struct{}
 
+var (
+	errFilter    = errors.New("filter failed")
+	errPost      = errors.New("postFilter failed")
+	errNormalize = errors.New("normalize failed")
+	errScore     = errors.New("score failed")
+)
+
 func (fakeMustFailWrappedPlugin) Name() string { return "fakeMustFailWrappedPlugin" }
 func (fakeMustFailWrappedPlugin) Filter(_ context.Context, _ *framework.CycleState, _ *v1.Pod, _ *framework.NodeInfo) *framework.Status {
-	return framework.AsStatus(errors.New("filter failed"))
+	return framework.AsStatus(errFilter)
 }
 
 func (fakeMustFailWrappedPlugin) PostFilter(_ context.Context, _ *framework.CycleState, _ *v1.Pod, _ framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
-	return nil, framework.AsStatus(errors.New("postFilter failed"))
+	return nil, framework.AsStatus(errPost)
 }
 
 func (pl fakeMustFailWrappedPlugin) ScoreExtensions() framework.ScoreExtensions {
@@ -1962,9 +1996,9 @@ func (pl fakeMustFailWrappedPlugin) ScoreExtensions() framework.ScoreExtensions 
 }
 
 func (fakeMustFailWrappedPlugin) NormalizeScore(_ context.Context, _ *framework.CycleState, _ *v1.Pod, _ framework.NodeScoreList) *framework.Status {
-	return framework.AsStatus(errors.New("normalize failed"))
+	return framework.AsStatus(errNormalize)
 }
 
 func (fakeMustFailWrappedPlugin) Score(_ context.Context, _ *framework.CycleState, _ *v1.Pod, _ string) (int64, *framework.Status) {
-	return 0, framework.AsStatus(errors.New("score failed"))
+	return 0, framework.AsStatus(errScore)
 }

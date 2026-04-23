@@ -9,7 +9,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	configv1 "k8s.io/kube-scheduler/config/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	schedConfig "sigs.k8s.io/kube-scheduler-simulator/simulator/scheduler/config"
 )
@@ -145,8 +145,9 @@ func Test_convertConfigurationForSimulator(t *testing.T) {
 			want: func() *configv1.KubeSchedulerConfiguration {
 				cfg := configGeneratedFromDefault()
 				profile2 := cfg.Profiles[0].DeepCopy()
-				profile2.SchedulerName = pointer.String(nondefaultschedulername)
+				profile2.SchedulerName = ptr.To(nondefaultschedulername)
 				profile2.Plugins.MultiPoint.Enabled = []configv1.Plugin{
+					{Name: "SchedulingGatesWrapped"},
 					{Name: "PrioritySortWrapped"},
 					{Name: "NodeUnschedulableWrapped"},
 					{Name: "NodeNameWrapped"},
@@ -154,10 +155,7 @@ func Test_convertConfigurationForSimulator(t *testing.T) {
 					{Name: "NodeAffinityWrapped", Weight: &weight2},
 					{Name: "NodePortsWrapped"},
 					{Name: "VolumeRestrictionsWrapped"},
-					{Name: "EBSLimitsWrapped"},
-					{Name: "GCEPDLimitsWrapped"},
 					{Name: "NodeVolumeLimitsWrapped"},
-					{Name: "AzureDiskLimitsWrapped"},
 					{Name: "VolumeBindingWrapped"},
 					{Name: "VolumeZoneWrapped"},
 					{Name: "PodTopologySpreadWrapped", Weight: &weight2},
@@ -314,6 +312,7 @@ func Test_convertConfigurationForSimulator(t *testing.T) {
 					{Name: "*"},
 				}
 				cfg.Profiles[0].Plugins.MultiPoint.Enabled = []configv1.Plugin{
+					{Name: "SchedulingGatesWrapped"},
 					{Name: "PrioritySortWrapped"},
 					{Name: "NodeUnschedulableWrapped"},
 					{Name: "NodeNameWrapped"},
@@ -322,10 +321,7 @@ func Test_convertConfigurationForSimulator(t *testing.T) {
 					{Name: "NodePortsWrapped"},
 					{Name: "NodeResourcesFitWrapped", Weight: &weight3},
 					{Name: "VolumeRestrictionsWrapped"},
-					{Name: "EBSLimitsWrapped"},
-					{Name: "GCEPDLimitsWrapped"},
 					{Name: "NodeVolumeLimitsWrapped"},
-					{Name: "AzureDiskLimitsWrapped"},
 					{Name: "VolumeBindingWrapped"},
 					{Name: "VolumeZoneWrapped"},
 					{Name: "PodTopologySpreadWrapped", Weight: &weight2},
@@ -379,6 +375,7 @@ func Test_convertConfigurationForSimulator(t *testing.T) {
 					{Name: "*"},
 				}
 				cfg.Profiles[0].Plugins.MultiPoint.Enabled = []configv1.Plugin{
+					{Name: "SchedulingGatesWrapped"},
 					{Name: "PrioritySortWrapped"},
 					{Name: "NodeUnschedulableWrapped"},
 					{Name: "NodeNameWrapped"},
@@ -387,10 +384,7 @@ func Test_convertConfigurationForSimulator(t *testing.T) {
 					{Name: "NodePortsWrapped"},
 					{Name: "NodeResourcesFitWrapped", Weight: &weight2},
 					{Name: "VolumeRestrictionsWrapped"},
-					{Name: "EBSLimitsWrapped"},
-					{Name: "GCEPDLimitsWrapped"},
 					{Name: "NodeVolumeLimitsWrapped"},
-					{Name: "AzureDiskLimitsWrapped"},
 					{Name: "VolumeBindingWrapped"},
 					{Name: "VolumeZoneWrapped"},
 					{Name: "PodTopologySpreadWrapped", Weight: &weight2},
@@ -463,6 +457,7 @@ func Test_convertConfigurationForSimulator(t *testing.T) {
 					{Name: "*"},
 				}
 				cfg.Profiles[0].Plugins.MultiPoint.Enabled = []configv1.Plugin{
+					{Name: "SchedulingGatesWrapped"},
 					{Name: "PrioritySortWrapped"},
 					{Name: "NodeUnschedulableWrapped"},
 					{Name: "NodeNameWrapped"},
@@ -470,10 +465,7 @@ func Test_convertConfigurationForSimulator(t *testing.T) {
 					{Name: "NodeAffinityWrapped", Weight: &weight2},
 					{Name: "NodePortsWrapped"},
 					{Name: "VolumeRestrictionsWrapped"},
-					{Name: "EBSLimitsWrapped"},
-					{Name: "GCEPDLimitsWrapped"},
 					{Name: "NodeVolumeLimitsWrapped"},
-					{Name: "AzureDiskLimitsWrapped"},
 					{Name: "VolumeBindingWrapped"},
 					{Name: "VolumeZoneWrapped"},
 					{Name: "PodTopologySpreadWrapped", Weight: &weight2},
@@ -529,6 +521,7 @@ func configGeneratedFromDefault() configv1.KubeSchedulerConfiguration {
 	cfg := versioned.DeepCopy()
 
 	cfg.Profiles[0].Plugins.MultiPoint.Enabled = []configv1.Plugin{
+		{Name: "SchedulingGatesWrapped"},
 		{Name: "PrioritySortWrapped"},
 		{Name: "NodeUnschedulableWrapped"},
 		{Name: "NodeNameWrapped"},
@@ -537,10 +530,7 @@ func configGeneratedFromDefault() configv1.KubeSchedulerConfiguration {
 		{Name: "NodePortsWrapped"},
 		{Name: "NodeResourcesFitWrapped", Weight: &weight1},
 		{Name: "VolumeRestrictionsWrapped"},
-		{Name: "EBSLimitsWrapped"},
-		{Name: "GCEPDLimitsWrapped"},
 		{Name: "NodeVolumeLimitsWrapped"},
-		{Name: "AzureDiskLimitsWrapped"},
 		{Name: "VolumeBindingWrapped"},
 		{Name: "VolumeZoneWrapped"},
 		{Name: "PodTopologySpreadWrapped", Weight: &weight2},

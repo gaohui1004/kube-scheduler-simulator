@@ -66,18 +66,18 @@ type FilterPluginExtender interface {
 type PostFilterPluginExtender interface {
 	// BeforePostFilter is a function that is run before the PostFilter method of the original plugin.
 	// If BeforePostFilter return non-success status, the simulator plugin doesn't run the PostFilter method of the original plugin and return that status.
-	BeforePostFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod, filteredNodeStatusMap framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status)
+	BeforePostFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod, filteredNodeStatusMap framework.NodeToStatusReader) (*framework.PostFilterResult, *framework.Status)
 	// AfterPostFilter is a function that is run after the PostFilter method of the original plugin.
 	// A PostFilter of the simulator plugin finally returns the status returned from PostFilter.
-	AfterPostFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod, filteredNodeStatusMap framework.NodeToStatusMap, postFilterResult *framework.PostFilterResult, status *framework.Status) (*framework.PostFilterResult, *framework.Status)
+	AfterPostFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod, filteredNodeStatusMap framework.NodeToStatusReader, postFilterResult *framework.PostFilterResult, status *framework.Status) (*framework.PostFilterResult, *framework.Status)
 }
 type PreScorePluginExtender interface {
 	// BeforePreScore is a function that runs before the PreFilter method of the original plugin.
 	// If BeforePreScore returns non-success status, the simulator plugin doesn't run the PreScore method of the original plugin and return that status.
-	BeforePreScore(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodes []*v1.Node) *framework.Status
+	BeforePreScore(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodes []*framework.NodeInfo) *framework.Status
 	// AfterPreScore is a function that is run after the PreScore method of the original plugin.
 	// A PreScore of the simulator plugin finally returns the status returned from AfterPreScore.
-	AfterPreScore(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodes []*v1.Node, preScoreStatus *framework.Status) *framework.Status
+	AfterPreScore(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodes []*framework.NodeInfo, preScoreStatus *framework.Status) *framework.Status
 }
 
 // ScorePluginExtender is the extender for Score plugin.
@@ -253,7 +253,7 @@ func pluginName(pluginName string) string {
 func NewWrappedPlugin(s Store, p framework.Plugin, opts ...Option) framework.Plugin {
 	options := options{
 		// default value to create empty extenders.
-		extenderInitializerOption: func(handle SimulatorHandle) PluginExtenders { return PluginExtenders{} },
+		extenderInitializerOption: func(_ SimulatorHandle) PluginExtenders { return PluginExtenders{} },
 	}
 	for _, o := range opts {
 		o.apply(&options)
@@ -456,7 +456,7 @@ func (w *wrappedPlugin) PreFilterExtensions() framework.PreFilterExtensions {
 // PreScore wraps original PreScore plugin of Scheduler Framework.
 // You can run your function before and/or after the execution of original PreScore plugin
 // by configuring with WithExtendersOption.
-func (w *wrappedPlugin) PreScore(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodes []*v1.Node) *framework.Status {
+func (w *wrappedPlugin) PreScore(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodes []*framework.NodeInfo) *framework.Status {
 	if w.originalPreScorePlugin == nil {
 		// return nil not to affect scoring
 		return nil
@@ -547,7 +547,7 @@ func (w *wrappedPlugin) Filter(ctx context.Context, state *framework.CycleState,
 	return s
 }
 
-func (w *wrappedPlugin) PostFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod, filteredNodeStatusMap framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
+func (w *wrappedPlugin) PostFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod, filteredNodeStatusMap framework.NodeToStatusReader) (*framework.PostFilterResult, *framework.Status) {
 	if w.originalPostFilterPlugin == nil {
 		// return Unschedulable not to affect post filtering.
 		// (If return Unschedulable, the scheduler will execute next PostFilter plugin.)
@@ -564,9 +564,15 @@ func (w *wrappedPlugin) PostFilter(ctx context.Context, state *framework.CycleSt
 	if s.IsSuccess() {
 		nominatedNodeName = r.NominatedNodeName
 	}
-	nodeNames := make([]string, 0, len(filteredNodeStatusMap))
-	for k := range filteredNodeStatusMap {
-		nodeNames = append(nodeNames, k)
+
+	// Extract node names from the NodeToStatusReader
+	// Note: In Kubernetes 1.32+, this only includes explicitly evaluated nodes.
+	// Nodes covered by AbsentNodesStatus are not included, which is acceptable for debugging purposes as they share the same rejection reason.
+	nodeNames := make([]string, 0)
+	if nodeToStatus, ok := filteredNodeStatusMap.(*framework.NodeToStatus); ok {
+		nodeToStatus.ForEachExplicitNode(func(nodeName string, _ *framework.Status) {
+			nodeNames = append(nodeNames, nodeName)
+		})
 	}
 	w.store.AddPostFilterResult(pod.Namespace, pod.Name, nominatedNodeName, w.originalPostFilterPlugin.Name(), nodeNames)
 

@@ -2,9 +2,12 @@ package debuggablescheduler
 
 import (
 	"github.com/spf13/cobra"
+	"golang.org/x/xerrors"
 	"k8s.io/kubernetes/cmd/kube-scheduler/app"
 	"k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 
+	simulatorschedulerconfig "sigs.k8s.io/kube-scheduler-simulator/simulator/scheduler/config"
+	"sigs.k8s.io/kube-scheduler-simulator/simulator/scheduler/extender"
 	"sigs.k8s.io/kube-scheduler-simulator/simulator/scheduler/plugin"
 )
 
@@ -14,14 +17,40 @@ func NewSchedulerCommand(opts ...Option) (*cobra.Command, func(), error) {
 		o(opt)
 	}
 
-	scheduleropts, cancelFn, err := CreateOptionForOutOfTreePlugin(opt.outOfTreeRegistry, opt.pluginExtender)
+	if opt.outOfTreeRegistry != nil {
+		simulatorschedulerconfig.SetOutOfTreeRegistries(opt.outOfTreeRegistry)
+	}
+
+	configs, err := NewConfigs()
+	if err != nil {
+		return nil, nil, xerrors.Errorf("failed to NewConfigs(): %w", err)
+	}
+
+	// Extender service must be initialized using `KubeSchedulerConfiguration.Extenders` config which is not override for simulator (before calling OverrideExtendersCfgToSimulator()).
+	// The override will be do within CreateOptions().
+	extenderService, err := extender.New(configs.clientSet, configs.versioned.Extenders, configs.sharedStore)
+	if err != nil {
+		return nil, nil, xerrors.Errorf("failed to New Extender service: %w", err)
+	}
+
+	schedulerOpts, cancelFn, err := CreateOptions(configs, opt.pluginExtender)
 	if err != nil {
 		return nil, cancelFn, err
 	}
+	// Launch the proxy HTTP server for Extender, which is used to store the Extender's results.
+	s := NewExtenderServer(extenderService)
+	shutdownFn, err := s.Start(configs.port)
+	if err != nil {
+		return nil, nil, xerrors.Errorf("start extender proxy server: %w", err)
+	}
 
-	command := app.NewSchedulerCommand(scheduleropts...)
+	cancel := func() {
+		cancelFn()
+		shutdownFn()
+	}
+	command := app.NewSchedulerCommand(schedulerOpts...)
 
-	return command, cancelFn, nil
+	return command, cancel, nil
 }
 
 type options struct {

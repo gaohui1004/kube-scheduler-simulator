@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -9,7 +10,6 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/labstack/gommon/log"
-	"golang.org/x/xerrors"
 
 	"sigs.k8s.io/kube-scheduler-simulator/simulator/config"
 	"sigs.k8s.io/kube-scheduler-simulator/simulator/server/di"
@@ -51,10 +51,7 @@ func NewSimulatorServer(cfg *config.Config, dic *di.Container) *SimulatorServer 
 
 	v1.GET("/listwatchresources", resourcewatcherHandler.ListWatchResources)
 
-	v1.POST("/extender/filter/:id", extenderHandler.Filter)
-	v1.POST("/extender/prioritize/:id", extenderHandler.Prioritize)
-	v1.POST("/extender/preempt/:id", extenderHandler.Preempt)
-	v1.POST("/extender/bind/:id", extenderHandler.Bind)
+	RouteExtender(v1, extenderHandler)
 
 	// initialize SimulatorServer.
 	s := &SimulatorServer{e: e}
@@ -71,7 +68,7 @@ func (s *SimulatorServer) Start(port int) (
 	e := s.e
 
 	go func() {
-		if err := e.Start(":" + strconv.Itoa(port)); err != nil && !xerrors.Is(err, http.ErrServerClosed) {
+		if err := e.Start(":" + strconv.Itoa(port)); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			e.Logger.Fatalf("failed to start server successfully: %v", err)
 		}
 	}()
@@ -85,4 +82,12 @@ func (s *SimulatorServer) Start(port int) (
 	}
 
 	return shutdownFn, nil
+}
+
+// RouteExtender routes request for extender to 4 endpoints.
+func RouteExtender(v1 *echo.Group, handler *handler.ExtenderHandler) {
+	v1.POST("/extender/filter/:id", handler.Filter)
+	v1.POST("/extender/prioritize/:id", handler.Prioritize)
+	v1.POST("/extender/preempt/:id", handler.Preempt)
+	v1.POST("/extender/bind/:id", handler.Bind)
 }

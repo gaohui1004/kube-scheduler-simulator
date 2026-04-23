@@ -56,7 +56,7 @@ func (s *preScoreState) Clone() framework.StateData {
 	return s
 }
 
-func (pl *NodeNumber) PreScore(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodes []*v1.Node) *framework.Status {
+func (pl *NodeNumber) PreScore(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodes []*framework.NodeInfo) *framework.Status {
 	klog.InfoS("execute PreScore on NodeNumber plugin", "pod", klog.KObj(pod))
 
 	podNameLastChar := pod.Name[len(pod.Name)-1:]
@@ -127,7 +127,7 @@ func (pl *NodeNumber) ScoreExtensions() framework.ScoreExtensions {
 }
 
 // New initializes a new plugin and returns it.
-func New(arg runtime.Object, h framework.Handle) (framework.Plugin, error) {
+func New(ctx context.Context, arg runtime.Object, h framework.Handle) (framework.Plugin, error) {
 	typedArg := NodeNumberArgs{Reverse: false}
 	if arg != nil {
 		err := frameworkruntime.DecodeInto(arg, &typedArg)

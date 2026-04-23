@@ -5,7 +5,7 @@ generate:
 
 .PHONY: lint
 lint:
-	golangci-lint run --timeout 30m ./...
+	golangci-lint run --timeout 90m ./...
 
 .PHONY: format
 format:
@@ -22,8 +22,5 @@ mod-download: ## Downloads the Go module
 
 .PHONY: build
 build:  
-	go build -o ./bin/simulator ./simulator.go
-
-.PHONY: start
-start: build
-	./hack/start_simulator.sh
+	go build -o ./bin/simulator ./cmd/simulator/simulator.go
+	go build -o ./bin/scheduler ./cmd/scheduler/scheduler.go

@@ -27,8 +27,7 @@ type SimulatorConfiguration struct {
 	// server is started.
 	Port int `json:"port,omitempty"`
 
-	// This is the URL for etcd. The simulator runs kube-apiserver
-	// internally, and the kube-apiserver uses this etcd.
+	// This is the URL for etcd.
 	EtcdURL string `json:"etcdURL,omitempty"`
 
 	// This URL represents the URL once web UI is started.
@@ -40,6 +39,9 @@ type SimulatorConfiguration struct {
 	// This variable is used to find Kubeconfig required to access your
 	// cluster for importing resources to scheduler simulator.
 	KubeConfig string `json:"kubeConfig,omitempty"`
+
+	// This is the URL for kube-apiserver.
+	KubeAPIServerURL string `json:"kubeApiServerUrl,omitempty"`
 
 	// This is the host of kube-apiserver which the simulator
 	// starts internally. Its default value is 127.0.0.1.
@@ -58,6 +60,19 @@ type SimulatorConfiguration struct {
 	// import resources from an user cluster's or not.
 	// Note, this is still a beta feature.
 	ExternalImportEnabled bool `json:"externalImportEnabled,omitempty"`
+
+	ResourceImportLabelSelector metav1.LabelSelector `json:"resourceImportLabelSelector,omitempty"`
+
+	// This variable indicates whether the simulator will
+	// sync resources from an user cluster's or not.
+	ResourceSyncEnabled bool `json:"resourceSyncEnabled,omitempty"`
+
+	// This variable indicates whether the simulator will
+	// replay events recorded in a file or not.
+	ReplayerEnabled bool `json:"replayEnabled,omitempty"`
+
+	// The path to a file where the record files are stored.
+	RecordFilePath string `json:"recordFilePath,omitempty"`
 
 	// This variable indicates whether an external scheduler
 	// is used.

@@ -21,10 +21,7 @@ func TestInTreeMultiPointPluginSet(t *testing.T) {
 			"NodePorts",
 			"NodeResourcesFit",
 			"VolumeRestrictions",
-			"EBSLimits",
-			"GCEPDLimits",
 			"NodeVolumeLimits",
-			"AzureDiskLimits",
 			"VolumeBinding",
 			"VolumeZone",
 			"PodTopologySpread",
@@ -33,6 +30,7 @@ func TestInTreeMultiPointPluginSet(t *testing.T) {
 			"NodeResourcesBalancedAllocation",
 			"ImageLocality",
 			"DefaultBinder",
+			"SchedulingGates",
 		}
 		wantDisabled := []string{}
 
@@ -71,6 +69,7 @@ func TestRegisteredMultiPointPluginNames(t *testing.T) {
 			name: "success",
 			want: []string{
 				"PrioritySort",
+				"SchedulingGates",
 				"NodeName",
 				"TaintToleration",
 				"NodeAffinity",
@@ -84,10 +83,7 @@ func TestRegisteredMultiPointPluginNames(t *testing.T) {
 				"VolumeBinding",
 				"NodePorts",
 				"VolumeRestrictions",
-				"EBSLimits",
-				"GCEPDLimits",
 				"NodeVolumeLimits",
-				"AzureDiskLimits",
 				"VolumeZone",
 				"DefaultPreemption",
 			},
@@ -97,6 +93,7 @@ func TestRegisteredMultiPointPluginNames(t *testing.T) {
 			name: "success with out of tree",
 			want: []string{
 				"PrioritySort",
+				"SchedulingGates",
 				"NodeName",
 				"TaintToleration",
 				"NodeAffinity",
@@ -110,10 +107,7 @@ func TestRegisteredMultiPointPluginNames(t *testing.T) {
 				"VolumeBinding",
 				"NodePorts",
 				"VolumeRestrictions",
-				"EBSLimits",
-				"GCEPDLimits",
 				"NodeVolumeLimits",
-				"AzureDiskLimits",
 				"VolumeZone",
 				"DefaultPreemption",
 				"custom", // added.

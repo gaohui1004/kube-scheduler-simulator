@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"golang.org/x/xerrors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -25,20 +26,30 @@ var ErrEmptyConfig = errors.New("config is required, but empty")
 // configYaml represents the value from the config file.
 var configYaml = &v1alpha1.SimulatorConfiguration{}
 
+// defaultSchedulerCfgPath is where we have the scheduler config in the container by default.
+const defaultSchedulerCfgPath = "/config/scheduler.yaml"
+
 // Config is configuration for simulator.
 type Config struct {
 	Port                  int
 	KubeAPIServerURL      string
 	EtcdURL               string
 	CorsAllowedOriginList []string
-	// ExternalImportEnabled indicates whether the simulator will import resources from an target cluster or not.
+	// ExternalImportEnabled indicates whether the simulator will import resources from a target cluster once
+	// when it's started.
 	ExternalImportEnabled bool
+	// ResourceImportLabelSelector is the label selector used to determine which resources from the target cluster should be imported.
+	ResourceImportLabelSelector metav1.LabelSelector
+	// ResourceSyncEnabled indicates whether the simulator will keep syncing resources from a target cluster.
+	ResourceSyncEnabled bool
+	// ReplayerEnabled indicates whether the simulator will replay events recorded in a file.
+	ReplayerEnabled bool
+	// RecordFilePath is the path to the file where the simulator records events.
+	RecordFilePath string
 	// ExternalKubeClientCfg is KubeConfig to get resources from external cluster.
-	// This field is non-empty only when ExternalImportEnabled == true.
+	// This field should be set when ExternalImportEnabled == true or ResourceSyncEnabled == true.
 	ExternalKubeClientCfg *rest.Config
 	InitialSchedulerCfg   *configv1.KubeSchedulerConfiguration
-	// ExternalSchedulerEnabled indicates whether an external scheduler is enabled.
-	ExternalSchedulerEnabled bool
 }
 
 const (
@@ -48,6 +59,8 @@ const (
 )
 
 // NewConfig gets some settings from config file or environment variables.
+//
+//nolint:cyclop
 func NewConfig() (*Config, error) {
 	if err := LoadYamlConfig(defaultFilePath); err != nil {
 		return nil, err
@@ -68,33 +81,43 @@ func NewConfig() (*Config, error) {
 		return nil, xerrors.Errorf("get frontend URL: %w", err)
 	}
 
-	apiurl := getKubeAPIServerURL()
+	apiurl, err := getKubeAPIServerURL()
+	if err != nil {
+		return nil, xerrors.Errorf("get kube API server URL: %w", err)
+	}
 
 	externalimportenabled := getExternalImportEnabled()
+	resourceSyncEnabled := getResourceSyncEnabled()
+	replayerEnabled := getReplayerEnabled()
+	recordFilePath := getRecordFilePath()
 	externalKubeClientCfg := &rest.Config{}
-	if externalimportenabled {
-		externalKubeClientCfg, err = GetKubeClientConfig()
+	if hasTwoOrMoreTrue(externalimportenabled, resourceSyncEnabled, replayerEnabled) {
+		return nil, xerrors.Errorf("externalImportEnabled, resourceSyncEnabled and replayerEnabled cannot be used simultaneously.")
+	}
+	if externalimportenabled || resourceSyncEnabled {
+		externalKubeClientCfg, err = clientcmd.BuildConfigFromFlags("", configYaml.KubeConfig)
 		if err != nil {
 			return nil, xerrors.Errorf("get kube clientconfig: %w", err)
 		}
 	}
 
-	initialschedulerCfg, err := getSchedulerCfg()
+	initialschedulerCfg, err := GetSchedulerCfg()
 	if err != nil {
 		return nil, xerrors.Errorf("get SchedulerCfg: %w", err)
 	}
 
-	externalSchedEnabled := getExternalSchedulerEnabled()
-
 	return &Config{
-		Port:                     port,
-		KubeAPIServerURL:         apiurl,
-		EtcdURL:                  etcdurl,
-		CorsAllowedOriginList:    corsAllowedOriginList,
-		InitialSchedulerCfg:      initialschedulerCfg,
-		ExternalImportEnabled:    externalimportenabled,
-		ExternalKubeClientCfg:    externalKubeClientCfg,
-		ExternalSchedulerEnabled: externalSchedEnabled,
+		Port:                        port,
+		KubeAPIServerURL:            apiurl,
+		EtcdURL:                     etcdurl,
+		CorsAllowedOriginList:       corsAllowedOriginList,
+		InitialSchedulerCfg:         initialschedulerCfg,
+		ExternalImportEnabled:       externalimportenabled,
+		ResourceImportLabelSelector: configYaml.ResourceImportLabelSelector,
+		ExternalKubeClientCfg:       externalKubeClientCfg,
+		ResourceSyncEnabled:         resourceSyncEnabled,
+		ReplayerEnabled:             replayerEnabled,
+		RecordFilePath:              recordFilePath,
 	}, nil
 }
 
@@ -136,34 +159,15 @@ func getPort() (int, error) {
 }
 
 // getKubeAPIServerURL gets KubeAPIServerURL from environment variable first, if empty from the config file.
-func getKubeAPIServerURL() string {
-	p := os.Getenv("KUBE_API_PORT")
-	if p == "" {
-		p = strconv.Itoa(configYaml.KubeAPIPort)
-		if p == "" {
-			p = "3131"
+func getKubeAPIServerURL() (string, error) {
+	url := os.Getenv("KUBE_APISERVER_URL")
+	if url == "" {
+		url = configYaml.KubeAPIServerURL
+		if url == "" {
+			return "", xerrors.Errorf("get KUBE_APISERVER_URL from config: %w", ErrEmptyConfig)
 		}
 	}
-
-	h := os.Getenv("KUBE_API_HOST")
-	if h == "" {
-		h = configYaml.KubeAPIHost
-		if h == "" {
-			h = "127.0.0.1"
-		}
-	}
-	return h + ":" + p
-}
-
-// getExternalSchedulerEnabled gets ExternalSchedulerEnabled from environment variable first,
-// if empty from the config file.
-func getExternalSchedulerEnabled() bool {
-	e := os.Getenv("EXTERNAL_SCHEDULER_ENABLED")
-	b, err := strconv.ParseBool(e)
-	if e == "" || err != nil {
-		b = configYaml.ExternalSchedulerEnabled
-	}
-	return b
+	return url, nil
 }
 
 // getEtcdURL gets EtcdURL from environment variable first,
@@ -183,7 +187,7 @@ func getEtcdURL() (string, error) {
 // if empty from the config file.
 // This allowed list is applied to kube-apiserver and the simulator server.
 //
-// Let's say CORS_ALLOWED_ORIGIN_LIST="http://localhost:3000, http://localhost:3001, http://localhost:3002" are given.
+// Let's say CORS_ALLOWED_ORIGIN_LIST=http://localhost:3000,http://localhost:3001,http://localhost:3002 is given.
 // Then, getCorsAllowedOriginList returns []string{"http://localhost:3000", "http://localhost:3001", "http://localhost:3002"}
 func getCorsAllowedOriginList() ([]string, error) {
 	e := os.Getenv("CORS_ALLOWED_ORIGIN_LIST")
@@ -220,16 +224,17 @@ func parseStringListEnv(e string) []string {
 	return list
 }
 
-// getSchedulerCfg reads KUBE_SCHEDULER_CONFIG_PATH which means initial kube-scheduler configuration
+// GetSchedulerCfg reads KUBE_SCHEDULER_CONFIG_PATH which means initial kube-scheduler configuration
 // if empty from the config file.
 // and converts it into *configv1.KubeSchedulerConfiguration.
 // KUBE_SCHEDULER_CONFIG_PATH is not required.
 // If KUBE_SCHEDULER_CONFIG_PATH is not set, the default configuration of kube-scheduler will be used.
-func getSchedulerCfg() (*configv1.KubeSchedulerConfiguration, error) {
+func GetSchedulerCfg() (*configv1.KubeSchedulerConfiguration, error) {
 	kubeSchedulerConfigPath := os.Getenv("KUBE_SCHEDULER_CONFIG_PATH")
 	if kubeSchedulerConfigPath == "" {
 		kubeSchedulerConfigPath = configYaml.KubeSchedulerConfigPath
 		if kubeSchedulerConfigPath == "" {
+			config.SetKubeSchedulerCfgPath(defaultSchedulerCfgPath)
 			dsc, err := config.DefaultSchedulerConfig()
 			if err != nil {
 				return nil, xerrors.Errorf("create default scheduler config: %w", err)
@@ -237,6 +242,7 @@ func getSchedulerCfg() (*configv1.KubeSchedulerConfiguration, error) {
 			return dsc, nil
 		}
 	}
+	config.SetKubeSchedulerCfgPath(kubeSchedulerConfigPath)
 	data, err := os.ReadFile(kubeSchedulerConfigPath)
 	if err != nil {
 		return nil, xerrors.Errorf("read scheduler config file: %w", err)
@@ -260,6 +266,40 @@ func getExternalImportEnabled() bool {
 	}
 	isExternalImportEnabled, _ := strconv.ParseBool(isExternalImportEnabledString)
 	return isExternalImportEnabled
+}
+
+// getResourceSyncEnabled reads RESOURCE_SYNC_ENABLED and converts it to bool
+// if empty from the config file.
+// This function will return `true` if `RESOURCE_SYNC_ENABLED` is "1".
+func getResourceSyncEnabled() bool {
+	resourceSyncEnabledString := os.Getenv("RESOURCE_SYNC_ENABLED")
+	if resourceSyncEnabledString == "" {
+		resourceSyncEnabledString = strconv.FormatBool(configYaml.ResourceSyncEnabled)
+	}
+	resourceSyncEnabled, _ := strconv.ParseBool(resourceSyncEnabledString)
+	return resourceSyncEnabled
+}
+
+// getReplayerEnabled reads REPLAYER_ENABLED and converts it to bool
+// if empty from the config file.
+// This function will return `true` if `REPLAYER_ENABLED` is "1".
+func getReplayerEnabled() bool {
+	replayerEnabledString := os.Getenv("REPLAYER_ENABLED")
+	if replayerEnabledString == "" {
+		replayerEnabledString = strconv.FormatBool(configYaml.ReplayerEnabled)
+	}
+	replayerEnabled, _ := strconv.ParseBool(replayerEnabledString)
+	return replayerEnabled
+}
+
+// getRecordFilePath reads RECORD_FILE_PATH
+// if empty from the config file.
+func getRecordFilePath() string {
+	recordFilePath := os.Getenv("RECORD_FILE_PATH")
+	if recordFilePath == "" {
+		recordFilePath = configYaml.RecordFilePath
+	}
+	return recordFilePath
 }
 
 func decodeSchedulerCfg(buf []byte) (*configv1.KubeSchedulerConfiguration, error) {
@@ -288,4 +328,15 @@ func GetKubeClientConfig() (*rest.Config, error) {
 		return nil, xerrors.Errorf("get client config: %w", err)
 	}
 	return clientConfig, nil
+}
+
+func hasTwoOrMoreTrue(values ...bool) bool {
+	trueExist := false
+	for _, v := range values {
+		if trueExist && v {
+			return true
+		}
+		trueExist = trueExist || v
+	}
+	return false
 }

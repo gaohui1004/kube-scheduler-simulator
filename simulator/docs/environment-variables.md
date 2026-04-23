@@ -9,7 +9,7 @@ For config file, please refer to the simulator [config.yaml](./../config.yaml).
 
 This page describes the environment variables that are used to configure the simulator.
 
-Please refer to [docker-compose.yml](./../../docker-compose.yml) as an example use.
+Please refer to [compose.yml](./../../compose.yml) as an example use.
 
 ### For Simulator
 
@@ -24,19 +24,16 @@ kube-apiserver uses this etcd.
 started. The simulator and internal kube-apiserver set the allowed
 origin for `CORS_ALLOWED_ORIGIN_LIST`.
 
-`KUBECONFIG`: This is for the beta feature "Importing cluster's 
+`KUBECONFIG`: This is for the beta feature "Importing cluster's
 resources". This variable is used to find Kubeconfig required to
 access your cluster for importing resources to scheduler simulator.
 
-`KUBE_API_HOST`: This is the host of kube-apiserver which the
-simulator starts internally. Its default value is `127.0.0.1`.
-
-`KUBE_API_PORT`: This is the port of kube-apiserver. Its default
-value is `3131`.
+`KUBE_APISEVER_URL`: This is the URL of kube-apiserver which the
+simulator uses. This variable is used to connect to external kube-apiserver.
 
 `KUBE_SCHEDULER_CONFIG_PATH`: The path to a KubeSchedulerConfiguration
 file.  If passed, the simulator will start the scheduler with that
-configuration.  Or, if you use web UI, you can change the
+configuration. Or, if you use web UI, you can change the
 configuration from the web UI as well.
 
 `EXTERNAL_IMPORT_ENABLED`: This variable indicates whether the simulator
